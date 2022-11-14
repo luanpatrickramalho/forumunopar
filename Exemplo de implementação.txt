@@ -1,0 +1,192 @@
+<div id="container"></div>
+
+<script>
+/**
+ * Define a versão da API Google Pay
+ */
+const baseRequest = {
+  apiVersion: 2,
+  apiVersionMinor: 0
+};
+
+/**
+ * Define as redes de cartões de pagamento compatíveis
+ */
+const allowedCardNetworks = ["AMEX", "DISCOVER", "INTERAC", "JCB", "MASTERCARD", "MIR", "VISA"];
+
+/**
+ * Descreve as formas de pagamento permitidas
+ */
+const allowedCardAuthMethods = ["PAN_ONLY", "CRYPTOGRAM_3DS"];
+
+/**
+ * Identifica seu gateway e o identificador de comerciante do gateway do seu site
+*/
+const tokenizationSpecification = {
+  type: 'PAYMENT_GATEWAY',
+  parameters: {
+    'gateway': 'example',
+    'gatewayMerchantId': 'exampleGatewayMerchantId'
+  }
+};
+
+/**
+ * Descreve o suporte do seu site para a forma de pagamento CARTÃO e seus requisitos
+ */
+const baseCardPaymentMethod = {
+  type: 'CARD',
+  parameters: {
+    allowedAuthMethods: allowedCardAuthMethods,
+    allowedCardNetworks: allowedCardNetworks
+  }
+};
+
+/**
+ * Descreve o suporte do seu site para a forma de pagamento CARTÃO e seus requisitos incluindo formas opcionais
+ * fields
+ */
+const cardPaymentMethod = Object.assign(
+  {},
+  baseCardPaymentMethod,
+  {
+    tokenizationSpecification: tokenizationSpecification
+  }
+);
+
+/**
+ * Aqui inicia o objeto google.payments.api.PaymentsClient ou deixa nulo se ainda não estiver definido
+ */
+let paymentsClient = null;
+
+/**
+ * Configura o suporte do seu site para as formas de pagamento compatíveis com o Google Pay
+ */
+function getGoogleIsReadyToPayRequest() {
+  return Object.assign(
+      {},
+      baseRequest,
+      {
+        allowedPaymentMethods: [baseCardPaymentMethod]
+      }
+  );
+}
+
+/**
+ *  Configura o suporte do seu site para o Google Pay API
+*/
+function getGooglePaymentDataRequest() {
+  const paymentDataRequest = Object.assign({}, baseRequest);
+  paymentDataRequest.allowedPaymentMethods = [cardPaymentMethod];
+  paymentDataRequest.transactionInfo = getGoogleTransactionInfo();
+  paymentDataRequest.merchantInfo = {
+    // @todo a merchant ID is available for a production environment after approval by Google
+    // See {@link https://developers.google.com/pay/api/web/guides/test-and-deploy/integration-checklist|Integration checklist}
+    // merchantId: '12345678901234567890',
+    merchantName: 'Example Merchant'
+  };
+  return paymentDataRequest;
+}
+
+/**
+ * Retornar um PaymentsClient ativo ou inicializa
+ */
+function getGooglePaymentsClient() {
+  if ( paymentsClient === null ) {
+    paymentsClient = new google.payments.api.PaymentsClient({environment: 'TEST'});
+  }
+  return paymentsClient;
+}
+
+/**
+ * Inicialize o Google PaymentsClient após o carregamento do JavaScript hospedado pelo Google
+ */
+function onGooglePayLoaded() {
+  const paymentsClient = getGooglePaymentsClient();
+  paymentsClient.isReadyToPay(getGoogleIsReadyToPayRequest())
+      .then(function(response) {
+        if (response.result) {
+          addGooglePayButton();
+          // @todo prefetch payment data to improve performance after confirming site functionality
+          // prefetchGooglePaymentData();
+        }
+      })
+      .catch(function(err) {
+        // show error in developer console for debugging
+        console.error(err);
+      });
+}
+
+/**
+ * Adicionar um botão de pagamento do Google Pay
+ *
+ * @see {@link https://developers.google.com/pay/api/web/reference/request-objects#ButtonOptions|Button options}
+ * @see {@link https://developers.google.com/pay/api/web/guides/brand-guidelines|Google Pay brand guidelines}
+ */
+function addGooglePayButton() {
+  const paymentsClient = getGooglePaymentsClient();
+  const button =
+      paymentsClient.createButton({
+        onClick: onGooglePaymentButtonClicked,
+        allowedPaymentMethods: [baseCardPaymentMethod]
+      });
+  document.getElementById('container').appendChild(button);
+}
+
+/**
+ * Fornecer à API Google Pay um valor de pagamento, moeda e status do valor
+*/
+function getGoogleTransactionInfo() {
+  return {
+    countryCode: 'US',
+    currencyCode: 'USD',
+    totalPriceStatus: 'FINAL',
+    // set to cart total
+    totalPrice: '1.00'
+  };
+}
+
+/**
+ * faz uma pré-busca de dados de pagamento antes da interação do usuário
+ */
+function prefetchGooglePaymentData() {
+  const paymentDataRequest = getGooglePaymentDataRequest();
+  // transactionInfo must be set but does not affect cache
+  paymentDataRequest.transactionInfo = {
+    totalPriceStatus: 'NOT_CURRENTLY_KNOWN',
+    currencyCode: 'USD'
+  };
+  const paymentsClient = getGooglePaymentsClient();
+  paymentsClient.prefetchPaymentData(paymentDataRequest);
+}
+
+/**
+ * Mostrar a planilha de pagamento do Google Pay quando o botão de pagamento do Google Pay for clicado
+ */
+function onGooglePaymentButtonClicked() {
+  const paymentDataRequest = getGooglePaymentDataRequest();
+  paymentDataRequest.transactionInfo = getGoogleTransactionInfo();
+
+  const paymentsClient = getGooglePaymentsClient();
+  paymentsClient.loadPaymentData(paymentDataRequest)
+      .then(function(paymentData) {
+        // handle the response
+        processPayment(paymentData);
+      })
+      .catch(function(err) {
+        // show error in developer console for debugging
+        console.error(err);
+      });
+}
+/**
+ * Processar dados de pagamento retornados pela API Google Pay
+ */
+function processPayment(paymentData) {
+  // show returned data in developer console for debugging
+    console.log(paymentData);
+  // @todo pass payment token to your gateway to process payment
+  paymentToken = paymentData.paymentMethodData.tokenizationData.token;
+}</script>
+<script async
+  src="https://pay.google.com/gp/p/js/pay.js"
+  onload="onGooglePayLoaded()"></script>
+
